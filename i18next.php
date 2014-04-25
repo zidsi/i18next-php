@@ -19,7 +19,23 @@ class i18next {
          * @var string fall back language
          */
         private static $_fallBackLanguage = 'dev';
-        
+        /**
+         * Plural rules based on i18next.plurals.js definition 
+         * 
+         * @todo: parse https://github.com/jamuhl/i18next/blob/master/src/i18next.plurals.js to get more rules :/
+         *          Watch for function result transformations based on numbers array!
+         * @var array
+         */
+        private static $_pluralRules = array(
+          'sl' => 'return $n % 100 === 1 ? 1 : ($n % 100 === 2 ? 2 : ( $n%100 === 3 || $n%100===4 ? 3 : 5));'
+        );
+
+        /**
+         * Will hold plural functions for languages
+         * @var array
+         */
+        private static $_pluralFunctions = array ();
+
         /**
          * Inits i18next static class...
          * 
@@ -32,10 +48,18 @@ class i18next {
 
 		self::$_language = $language;
 		self::$_path = $path;
-
 		self::loadTranslation();
-
+                self::populatePluralFunctions();
 	}
+        
+        /**
+         * Populates plural functions from plural rules
+         */
+        private static function populatePluralFunctions() {
+            foreach (self::$_pluralRules as $lng => $rule) {
+                self::$_pluralFunctions[$lng] = create_function('$n', $rule);
+            }
+        }
 
         /**
          * Change default language and fall back language
@@ -177,14 +201,23 @@ class i18next {
 
 		$return = false;
 
-		if (array_key_exists('lng', $variables) && array_key_exists($variables['lng'], self::$_translation))
+		if (array_key_exists('lng', $variables) && array_key_exists($variables['lng'], self::$_translation)) 
+                {
 			$translation = self::$_translation[$variables['lng']];
-
-		else if (array_key_exists(self::$_language, self::$_translation))
+                        // we need to store language used for multiple plural forms
+                        $language = $variables['lng'];
+                }
+		else if (array_key_exists(self::$_language, self::$_translation)) 
+                {
 			$translation = self::$_translation[self::$_language];
-
+                        $language = self::$_language;
+                }
 		else
-			$translation = array();
+		{
+                    $translation = array();
+                    // Khm... skip lookup into empty array!
+                    return $return;
+                }
 
 		foreach (explode('.', $key) as $path) {
 
@@ -194,10 +227,11 @@ class i18next {
 
 			}
 			else if (array_key_exists($path, $translation)) {
-
-				if (array_key_exists('count', $variables) && $variables['count'] != 1 && array_key_exists($path . '_plural_' . $variables['count'], $translation))
-					$return = $translation[$path . '_plural' . $variables['count']];
-
+                                // transform count if exists and there is rule function for multiple plural forms
+                                $count = (array_key_exists('count', $variables) && array_key_exists($language,  self::$_pluralFunctions)) ? 
+                                        call_user_func(self::$_pluralFunctions[$language],$variables['count']) : (empty($variables['count'])? null : $variables['count'] );
+				if (array_key_exists('count', $variables) && $variables['count'] != 1 && array_key_exists($path . '_plural_' . $count, $translation))
+					$return = $translation[$path . '_plural_' . $count];
 				else if (array_key_exists('count', $variables) && $variables['count'] != 1 && array_key_exists($path . '_plural', $translation))
 					$return = $translation[$path . '_plural'];
 
